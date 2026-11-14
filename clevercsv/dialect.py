@@ -103,10 +103,20 @@ class SimpleDialect:
         return cls(delimiter, quotechar, escapechar, strict=d.strict)
 
     def to_csv_dialect(self) -> csv.Dialect:
+        # The csv module requires a one-character delimiter, but a
+        # single-column dialect (empty delimiter) has none. We use the NUL
+        # character as a stand-in: it cannot occur in the data, so it is
+        # never emitted between cells and never triggers quoting, leaving
+        # cell values (including commas and quotes) untouched.
+        delim = "\x00" if self.delimiter == "" else self.delimiter
+
         class dialect(csv.Dialect):
             assert self.delimiter is not None
-            delimiter = self.delimiter
-            quotechar = '"' if self.quotechar == "" else self.quotechar
+            delimiter = delim
+            # With QUOTE_NONE the quotechar must be None: a placeholder
+            # quotechar would make the csv writer try to escape quotes that
+            # occur in cell values, which fails without an escapechar.
+            quotechar = None if self.quotechar == "" else self.quotechar
             escapechar = None if self.escapechar == "" else self.escapechar
             doublequote = True
             quoting = (

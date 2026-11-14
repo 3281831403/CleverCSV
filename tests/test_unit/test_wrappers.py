@@ -140,6 +140,47 @@ class WrappersTestCase(unittest.TestCase):
         with self.subTest(name="simple_encoding"):
             self._df_test(table, dialect, num_char=10, encoding="latin1")
 
+        table = [["A"], [1], [2], [3]]
+        dialect = SimpleDialect(delimiter="", quotechar="", escapechar="")
+        with self.subTest(name="single_column"):
+            self._df_test(table, dialect)
+
+    def test_read_dataframe_single_column(self) -> None:
+        # Regression test for single-column files: the detected dialect has
+        # an empty delimiter, which pandas does not support natively. The
+        # dialect can be supplied through keyword arguments (as done by the
+        # code generated with ``clevercsv code -p``), and cell values
+        # containing commas or quotes must be preserved exactly.
+        rows = ["name", "hello, world", '"say ""hi"""', "plain"]
+        contents = "\n".join(rows) + "\n"
+        tmpfd, tmpfname = tempfile.mkstemp(prefix="ccsv_", suffix=".csv")
+        tmpid = os.fdopen(tmpfd, "w", newline="")
+        tmpid.write(contents)
+        tmpid.close()
+
+        try:
+            with self.subTest(name="quoted"):
+                df = wrappers.read_dataframe(
+                    tmpfname, delimiter="", quotechar='"', escapechar=""
+                )
+                exp = pd.DataFrame.from_records(
+                    [["hello, world"], ['say "hi"'], ["plain"]],
+                    columns=["name"],
+                )
+                self.assertTrue(df.equals(exp))
+
+            with self.subTest(name="unquoted"):
+                df = wrappers.read_dataframe(
+                    tmpfname, delimiter="", quotechar="", escapechar=""
+                )
+                exp = pd.DataFrame.from_records(
+                    [["hello, world"], ['"say ""hi"""'], ["plain"]],
+                    columns=["name"],
+                )
+                self.assertTrue(df.equals(exp))
+        finally:
+            os.unlink(tmpfname)
+
     def test_read_table(self) -> None:
         table: List[List[Any]]
 
@@ -262,6 +303,34 @@ class WrappersTestCase(unittest.TestCase):
 
         with self.subTest(name="encoding_2"):
             self._write_test_table(table, exp, encoding="cp1252")
+
+    def test_write_table_single_column(self) -> None:
+        # Regression test for single-column files: writing a table with a
+        # detected single-column dialect (empty delimiter) must work, and
+        # cell values containing commas or quotes must survive a round-trip.
+        table = [["name"], ["hello, world"], ['say "hi"'], ["plain"]]
+
+        dialect = SimpleDialect(delimiter="", quotechar='"', escapechar="")
+        exp = 'name\nhello, world\n"say ""hi"""\nplain\n'
+        with self.subTest(name="quoted"):
+            self._write_test_table(table, exp, dialect=dialect)
+
+        dialect = SimpleDialect(delimiter="", quotechar="", escapechar="")
+        exp = 'name\nhello, world\nsay "hi"\nplain\n'
+        with self.subTest(name="unquoted"):
+            self._write_test_table(table, exp, dialect=dialect)
+
+        dialect = SimpleDialect(delimiter="", quotechar='"', escapechar="")
+        with self.subTest(name="roundtrip"):
+            tmpfd, tmpfname = tempfile.mkstemp(prefix="ccsv_", suffix=".csv")
+            try:
+                wrappers.write_table(table, tmpfname, dialect=dialect)
+                self.assertEqual(
+                    table, wrappers.read_table(tmpfname, dialect=dialect)
+                )
+            finally:
+                os.close(tmpfd)
+                os.unlink(tmpfname)
 
     def _write_test_dicts(
         self, items: Iterable[Dict[str, Any]], expected: str, **kwargs: Any

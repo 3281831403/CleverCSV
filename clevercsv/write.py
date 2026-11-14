@@ -71,6 +71,16 @@ class writer:
         for key, value in fmtparams.items():
             props[key] = value
 
+        # A SimpleDialect can have an empty delimiter, which denotes a file
+        # that consists of a single column. The csv module requires a
+        # one-character delimiter, so we use the NUL character as a stand-in.
+        # The delimiter is never emitted for single-column rows, and since
+        # NUL cannot occur in the data, it never triggers quoting either.
+        # Thus, cell values (including those containing commas or quotes)
+        # are written exactly as the dialect prescribes.
+        if props.get("delimiter", None) == "":
+            props["delimiter"] = "\x00"
+
         # lineterminator must be set
         if "lineterminator" not in props or props["lineterminator"] is None:
             props["lineterminator"] = "\n"

@@ -359,6 +359,42 @@ with open("{tmpfname}", "r", newline="", encoding="ASCII") as fp:
         finally:
             os.unlink(tmpfname)
 
+    def test_code_single_column(self) -> None:
+        # Regression test for single-column files: the detected dialect has
+        # an empty delimiter, and the generated code must be runnable.
+        table: TableType = [["id"], ["ABC123"], ["DEF456"], ["GHI789"]]
+        dialect = SimpleDialect(delimiter="", quotechar="", escapechar="")
+        tmpfname = self._build_file(table, dialect)
+
+        try:
+            application = build_application()
+            tester = Tester(application)
+            tester.test_command("code", [tmpfname])
+            output = tester.get_stdout()
+            self.assertIsNotNone(output)
+            assert output is not None
+            self.assertIn('delimiter=""', output)
+            namespace: dict = {}
+            exec(output, namespace)
+            expected = [[str(cell) for cell in row] for row in table]
+            self.assertEqual(namespace["rows"], expected)
+
+            application = build_application()
+            tester = Tester(application)
+            tester.test_command("code", ["-p", tmpfname])
+            output = tester.get_stdout()
+            self.assertIsNotNone(output)
+            assert output is not None
+            self.assertIn('delimiter=""', output)
+            namespace = {}
+            exec(output, namespace)
+            self.assertEqual(
+                namespace["df"]["id"].tolist(),
+                ["ABC123", "DEF456", "GHI789"],
+            )
+        finally:
+            os.unlink(tmpfname)
+
     def test_standardize_1(self) -> None:
         table: TableType = [["A", "B", "C"], [1, 2, 3], [4, 5, 6]]
         dialect = SimpleDialect(delimiter=";", quotechar="", escapechar="")
